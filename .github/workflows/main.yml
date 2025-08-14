@@ -2,90 +2,60 @@ name: CI/CD
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 permissions:
   contents: read
   packages: write
 
-env:
-  SHA: ${{ github.sha }}
-
 jobs:
-  test-and-build:
+  test-frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # --- make owner lowercase for GHCR ---
-      - name: Set image names (lowercase)
-        run: |
-          echo "IMAGE_NS=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
-          echo "FRONTEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/simple-fortune-frontend" >> $GITHUB_ENV
-          echo "BACKEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/simple-fortune-backend" >> $GITHUB_ENV
-
-      # --- tests (same as before) ---
       - uses: actions/setup-go@v5
-        with: { go-version-file: frontend/go.mod }
-      - name: Test Frontend
+        with:
+          go-version-file: frontend/go.mod
+
+      - name: Run frontend tests
         working-directory: frontend
         run: go test ./... -v
 
-      # (backend tests guarded)
-      - if: hashFiles('backend/go.mod') != ''
-        uses: actions/setup-go@v5
-        with: { go-version-file: backend/go.mod }
-      - name: Test Backend
-        if: hashFiles('backend/go.mod') != ''
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Run backend tests
         working-directory: backend
         run: go test ./... -v
 
-      # --- build & push to GHCR on main ---
-      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/setup-buildx-action@v3
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    needs: [test-frontend, test-backend]
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Log in to GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build & push Backend
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Build and push Backend
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           push: true
-          tags: |
-            ${{ env.BACKEND_IMAGE }}:latest
-            ${{ env.BACKEND_IMAGE }}:${{ env.SHA }}
+          tags: ghcr.io/${{ github.repository_owner }}/simple-fortune-backend:latest
 
-      - name: Build & push Frontend
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Build and push Frontend
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
-          tags: |
-            ${{ env.FRONTEND_IMAGE }}:latest
-            ${{ env.FRONTEND_IMAGE }}:${{ env.SHA }}
+          tags: ghcr.io/${{ github.repository_owner }}/simple-fortune-frontend:latest
 
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: test-and-build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Pull latest images
+      - name: Deploy
         run: |
-          docker pull ${{ env.BACKEND_IMAGE }}:latest
-          docker pull ${{ env.FRONTEND_IMAGE }}:latest
-          echo "Pulled from GHCR."
+          docker pull ghcr.io/${{ github.repository_owner }}/simple-fortune-backend:latest
+          docker pull ghcr.io/${{ github.repository_owner }}/simple-fortune-frontend:latest
+          echo "Deployed from GHCR"
