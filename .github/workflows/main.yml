@@ -18,30 +18,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # --- make owner lowercase for GHCR ---
+
       - name: Set image names (lowercase)
         run: |
           echo "IMAGE_NS=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
           echo "FRONTEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/simple-fortune-frontend" >> $GITHUB_ENV
           echo "BACKEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/simple-fortune-backend" >> $GITHUB_ENV
 
-      # --- tests (same as before) ---
+      # tests 
       - uses: actions/setup-go@v5
-        with: { go-version-file: frontend/go.mod }
+        with:
+          go-version-file: frontend/go.mod
       - name: Test Frontend
         working-directory: frontend
         run: go test ./... -v
 
-      # (backend tests guarded)
+     
       - if: hashFiles('backend/go.mod') != ''
         uses: actions/setup-go@v5
-        with: { go-version-file: backend/go.mod }
+        with:
+          go-version-file: backend/go.mod
       - name: Test Backend
         if: hashFiles('backend/go.mod') != ''
         working-directory: backend
         run: go test ./... -v
 
-      # --- build & push to GHCR on main ---
+     
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/setup-buildx-action@v3
 
@@ -88,4 +90,4 @@ jobs:
         run: |
           docker pull ${{ env.BACKEND_IMAGE }}:latest
           docker pull ${{ env.FRONTEND_IMAGE }}:latest
-          echo "Pulled from GHCR."
+          echo "Pulled from
