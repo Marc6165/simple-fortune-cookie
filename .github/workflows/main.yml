@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- Tests ---
+      # --- Tests -----
       - name: Set up Go (frontend)
         uses: actions/setup-go@v5
         with:
