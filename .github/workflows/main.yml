@@ -1,52 +1,48 @@
 name: CI/CD
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
-# needed to push to GHCR
 permissions:
   contents: read
   packages: write
 
 env:
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/simple-fortune-frontend
-  BACKEND_IMAGE:  ghcr.io/${{ github.repository_owner }}/simple-fortune-backend
   SHA: ${{ github.sha }}
 
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # --- Tests ---
-      - name: Set up Go (frontend)
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: frontend/go.mod
+      # --- make owner lowercase for GHCR ---
+      - name: Set image names (lowercase)
+        run: |
+          echo "IMAGE_NS=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
+          echo "FRONTEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/simple-fortune-frontend" >> $GITHUB_ENV
+          echo "BACKEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/simple-fortune-backend" >> $GITHUB_ENV
 
+      # --- tests (same as before) ---
+      - uses: actions/setup-go@v5
+        with: { go-version-file: frontend/go.mod }
       - name: Test Frontend
         working-directory: frontend
         run: go test ./... -v
 
-      - name: Set up Go (backend)
-        if: hashFiles('backend/go.mod') != ''
+      # (backend tests guarded)
+      - if: hashFiles('backend/go.mod') != ''
         uses: actions/setup-go@v5
-        with:
-          go-version-file: backend/go.mod
-
+        with: { go-version-file: backend/go.mod }
       - name: Test Backend
         if: hashFiles('backend/go.mod') != ''
         working-directory: backend
         run: go test ./... -v
 
-      # --- Build & Push to GHCR (only on push to main) ---
-      - name: Set up Docker Buildx
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      # --- build & push to GHCR on main ---
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
@@ -88,9 +84,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull latest images from GHCR
+      - name: Pull latest images
         run: |
           docker pull ${{ env.BACKEND_IMAGE }}:latest
           docker pull ${{ env.FRONTEND_IMAGE }}:latest
-          echo "Deployment completed! Images pulled from GHCR."
+          echo "Pulled from GHCR."
