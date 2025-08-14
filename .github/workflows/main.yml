@@ -6,6 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+# needed to push to GHCR
+permissions:
+  contents: read
+  packages: write
+
+env:
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/simple-fortune-frontend
+  BACKEND_IMAGE:  ghcr.io/${{ github.repository_owner }}/simple-fortune-backend
+  SHA: ${{ github.sha }}
+
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
@@ -13,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- Tests -----
+      # --- Tests ---
       - name: Set up Go (frontend)
         uses: actions/setup-go@v5
         with:
@@ -23,7 +33,6 @@ jobs:
         working-directory: frontend
         run: go test ./... -v
 
-      # Only run backend setup/tests if a go.mod exists there
       - name: Set up Go (backend)
         if: hashFiles('backend/go.mod') != ''
         uses: actions/setup-go@v5
@@ -35,48 +44,53 @@ jobs:
         working-directory: backend
         run: go test ./... -v
 
-      # --- Build & Push (only on push to main) ---
+      # --- Build & Push to GHCR (only on push to main) ---
       - name: Set up Docker Buildx
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Backend
+      - name: Build & push Backend
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/simple-fortune-backend:latest
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:${{ env.SHA }}
 
-      - name: Build and push Frontend
+      - name: Build & push Frontend
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/simple-fortune-frontend:latest
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.FRONTEND_IMAGE }}:${{ env.SHA }}
 
   deploy:
-    # only run after test-and-build, and only on pushes to main
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: test-and-build
     runs-on: ubuntu-latest
     steps:
-      - name: Log in to Docker Hub
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull latest images from Docker Hub
+      - name: Pull latest images from GHCR
         run: |
-          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/simple-fortune-backend:latest
-          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/simple-fortune-frontend:latest
-          echo "Deployment completed! Images pulled from Docker Hub."
+          docker pull ${{ env.BACKEND_IMAGE }}:latest
+          docker pull ${{ env.FRONTEND_IMAGE }}:latest
+          echo "Deployment completed! Images pulled from GHCR."
